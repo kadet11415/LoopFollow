@@ -106,13 +106,19 @@ extension MainViewController {
             }
             
             // Used for Min Ago watch readings
-            writeCalendar()
+            if UserDefaultsRepository.writeCalendarEvent.value {
+                writeCalendar()
+            }
             
             if UserDefaultsRepository.url.value != ""  {
                 if latestLoopTime == 0 {
                     webLoadNSDeviceStatus()
                
-                    webLoadNSBGData(onlyPullLastRecord: onlyPullLastRecord)
+                    if UserDefaultsRepository.shareUserName.value != "" && UserDefaultsRepository.sharePassword.value != "" {
+                        webLoadDexShare(onlyPullLastRecord: onlyPullLastRecord)
+                    } else {
+                        webLoadNSBGData(onlyPullLastRecord: onlyPullLastRecord)
+                    }
            
                     webLoadNSProfile()
                     if UserDefaultsRepository.downloadBasal.value {
@@ -145,6 +151,13 @@ extension MainViewController {
             } else {
                 // If we get an error, immediately try to pull NS BG Data
                 self.webLoadNSBGData(onlyPullLastRecord: onlyPullLastRecord)
+                
+                if globalVariables.dexVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.dexVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    DispatchQueue.main.async {
+                        self.sendNotification(title: "Dexcom Share Error", body: "Please double check user name and password, internet connection, and sharing status.")
+                    }
+                }
             }
         }
     }
@@ -166,9 +179,11 @@ extension MainViewController {
             urlBGDataPath = urlBGDataPath + "token=" + token + "&count=" + points
         }
         guard let urlBGData = URL(string: urlBGDataPath) else {
-            
+            if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+            }
             return
-            
         }
         var request = URLRequest(url: urlBGData)
         request.cachePolicy = URLRequest.CachePolicy.reloadIgnoringLocalCacheData
@@ -176,10 +191,18 @@ extension MainViewController {
         // Downloader
         let getBGTask = URLSession.shared.dataTask(with: request) { data, response, error in
             guard error == nil else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
                 
             }
             guard let data = data else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
                 
             }
@@ -193,6 +216,10 @@ extension MainViewController {
                     
                 }
             } else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Failure", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
                 
             }
@@ -336,7 +363,10 @@ extension MainViewController {
         }
         let escapedAddress = urlStringDeviceStatus.addingPercentEncoding(withAllowedCharacters:NSCharacterSet.urlQueryAllowed)
         guard let urlDeviceStatus = URL(string: escapedAddress!) else {
-            
+            if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                self.sendNotification(title: "Nightscout Failure", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+            }
             return
         }
         
@@ -346,10 +376,20 @@ extension MainViewController {
         
         
         let deviceStatusTask = URLSession.shared.dataTask(with: requestDeviceStatus) { data, response, error in
+            
             guard error == nil else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
             }
+            
             guard let data = data else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
             }
             
@@ -360,9 +400,15 @@ extension MainViewController {
                     self.updateDeviceStatusDisplay(jsonDeviceStatus: json)
                 }
             } else {
+                if globalVariables.nsVerifiedAlert < dateTimeUtils.getNowTimeIntervalUTC() + 300 {
+                    globalVariables.nsVerifiedAlert = dateTimeUtils.getNowTimeIntervalUTC()
+                    self.sendNotification(title: "Nightscout Error", body: "Please double check url, token, and internet connection. This may also indicate a temporary Nightscout issue")
+                }
                 return
-            } }
+            }
+        }
         deviceStatusTask.resume()
+        
     }
     
     // NS Device Status Response Processor
