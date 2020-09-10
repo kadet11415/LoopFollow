@@ -327,6 +327,7 @@ extension MainViewController {
         snoozer.updateDisplayWhenTriggered(bgVal: bgUnits.toDisplayUnits(String(bgData[bgData.count - 1].sgv)), directionVal: latestDirectionString ?? "", deltaVal: bgUnits.toDisplayUnits(latestDeltaString) ?? "", minAgoVal: latestMinAgoString ?? "", alertLabelVal: AlarmSound.whichAlarm)
         AlarmSound.setSoundFile(str: sound)
         AlarmSound.play(overrideVolume: overrideVolume, numLoops: numLoops)
+        startAlarmPlayingTimer()
     }
     
     func triggerAlarm(sound: String, snooozedBGReadingTime: TimeInterval?, overrideVolume: Bool, numLoops: Int)
@@ -342,6 +343,23 @@ extension MainViewController {
         }
         AlarmSound.setSoundFile(str: sound)
         AlarmSound.play(overrideVolume: overrideVolume, numLoops: numLoops)
+        
+        let bgSeconds = bgData.last!.date
+        let now = Date().timeIntervalSince1970
+        let secondsAgo = now - bgSeconds
+        var timerLength = 290 - secondsAgo
+        if timerLength < 10 { timerLength = 290}
+        startAlarmPlayingTimer(time: timerLength)
+    }
+    
+    func stopAlarmAtNextReading(){
+        
+        AlarmSound.whichAlarm = "none"
+        guard let snoozer = self.tabBarController!.viewControllers?[2] as? SnoozeViewController else { return }
+        snoozer.updateDisplayWhenTriggered(bgVal: bgUnits.toDisplayUnits(String(bgData[bgData.count - 1].sgv)), directionVal: latestDirectionString ?? "", deltaVal: bgUnits.toDisplayUnits(latestDeltaString) ?? "", minAgoVal: latestMinAgoString ?? "", alertLabelVal: AlarmSound.whichAlarm)
+        snoozer.SnoozeButton.isHidden = true
+        snoozer.AlertLabel.isHidden = true
+        AlarmSound.stop()
     }
     
     func clearOldSnoozes(){

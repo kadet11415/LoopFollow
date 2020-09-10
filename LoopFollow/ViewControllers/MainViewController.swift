@@ -74,9 +74,10 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     // check every 30 Seconds whether new bgvalues should be retrieved
     let timeInterval: TimeInterval = 30.0
     
-    // View Delay Timer
-    var viewTimer = Timer()
-    let viewTimeInterval: TimeInterval = UserDefaultsRepository.viewRefreshDelay.value
+    // Min Ago Timer
+    var minAgoTimer = Timer()
+    var minAgoTimeInterval: TimeInterval = 1.0
+    
     
     // Check Alarms Timer
     // Don't check within 1 minute of alarm triggering to give the snoozer time to save data
@@ -84,6 +85,15 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     var checkAlarmInterval: TimeInterval = 60.0
     
     var calTimer = Timer()
+    
+    var bgTimer = Timer()
+    var cageSageTimer = Timer()
+    var profileTimer = Timer()
+    var deviceStatusTimer = Timer()
+    var treatmentsTimer = Timer()
+    var alarmTimer = Timer()
+    var calendarTimer = Timer()
+    var graphNowTimer = Timer()
     
     // Info Table Setup
     var tableData : [infoData] = []
@@ -97,6 +107,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     var carbData: [bolusCarbGraphStruct] = []
     var overrideData: [DataStructs.overrideGraphStruct] = []
     var predictionData: [ShareGlucoseData] = []
+    var bgCheckData: [ShareGlucoseData] = []
     var chartData = LineChartData()
     var newBGPulled = false
     var lastCalDate: Double = 0
@@ -198,11 +209,13 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
         // setup display for NS vs Dex
         showHideNSDetails()
         
-        // Load Data
-        if (UserDefaultsRepository.url.value != "" || (UserDefaultsRepository.shareUserName.value != "" && UserDefaultsRepository.sharePassword.value != "")) && firstGraphLoad {
-            nightscoutLoader()
-        }
+        // Load Startup Data
+        restartAllTimers()
+        
     }
+    
+
+    
     
     override func viewWillAppear(_ animated: Bool) {
         // set screen lock
@@ -225,7 +238,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
            
               // settings for appBadge changed
               if appState.generalSettingsChanges & GeneralSettingsChangeEnum.appBadgeChange.rawValue != 0 {
-                 self.nightscoutLoader(forceLoad: true)
+                 
               }
               
               // settings for textcolor changed
@@ -284,70 +297,6 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
         return cell
     }
     
-    
-    // NS Loader Timer
-    fileprivate func startTimer(time: TimeInterval) {
-        timer = Timer.scheduledTimer(timeInterval: time,
-                                     target: self,
-                                     selector: #selector(MainViewController.timerDidEnd(_:)),
-                                     userInfo: nil,
-                                     repeats: true)
-    }
-    
-    // Check Alarm Timer
-    func startCheckAlarmTimer(time: TimeInterval) {
-        
-        checkAlarmTimer = Timer.scheduledTimer(timeInterval: time,
-                                     target: self,
-                                     selector: #selector(MainViewController.checkAlarmTimerDidEnd(_:)),
-                                     userInfo: nil,
-                                     repeats: false)
-    }
-    
-    // NS Loader Timer
-     func startViewTimer(time: TimeInterval) {
-        viewTimer = Timer.scheduledTimer(timeInterval: time,
-                                     target: self,
-                                     selector: #selector(MainViewController.viewTimerDidEnd(_:)),
-                                     userInfo: nil,
-                                     repeats: false)
-        
-    }
-    
-    // Timer to allow us to write min ago calendar entries but not update them every 30 seconds
-    fileprivate func startCalTimer(time: TimeInterval) {
-        calTimer = Timer.scheduledTimer(timeInterval: time,
-                                     target: self,
-                                     selector: #selector(MainViewController.calTimerDidEnd(_:)),
-                                     userInfo: nil,
-                                     repeats: false)
-    }
-    
-    // Nothing should be done when this timer ends because it just blocks the alarms from firing when it's active
-    @objc func calTimerDidEnd(_ timer:Timer) {
-       // if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Calendar Timer Ended") }
-    }
-    
-    // This delays a few things to hopefully all all data to arrive.
-    @objc func viewTimerDidEnd(_ timer:Timer) {
-//        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "View timer ended") }
-        if bgData.count > 0 {
-            self.checkAlarms(bgs: bgData)
-            self.updateMinAgo()
-            // self.updateBadge(val: bgData[bgData.count - 1].sgv)
-            //self.viewUpdateNSBG()
-            if UserDefaultsRepository.writeCalendarEvent.value {
-                self.writeCalendar()
-            }
-        }
-    }
-    
-    
-    // Nothing should be done when this timer ends because it just blocks the alarms from firing when it's active
-    @objc func checkAlarmTimerDidEnd(_ timer:Timer) {
-//        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Check alarm timer ended") }
-    }
-    
     @objc func appMovedToBackground() {
         // Allow screen to turn off
         UIApplication.shared.isIdleTimerDisabled = false;
@@ -358,11 +307,9 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
         // Cancel the current timer and start a fresh background timer using the settings value only if background task is enabled
         
         if UserDefaultsRepository.backgroundRefresh.value {
-            timer.invalidate()
             backgroundTask.startBackgroundTask()
-            let refresh = UserDefaultsRepository.backgroundRefreshFrequency.value * 60
-            startTimer(time: TimeInterval(refresh))
         }
+        
     }
 
     @objc func appCameToForeground() {
@@ -372,24 +319,17 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
         // Cancel the background tasks, start a fresh timer
         if UserDefaultsRepository.backgroundRefresh.value {
             backgroundTask.stopBackgroundTask()
-            timer.invalidate()
-        }
-        if !timer.isValid {
-            startTimer(time: timeInterval)
         }
         
+        restartAllTimers()
+
     }
     
     @objc override func viewDidAppear(_ animated: Bool) {
         showHideNSDetails()
     }
     
-    // Check for new data when timer ends
-    @objc func timerDidEnd(_ timer:Timer) {
-//        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Main timer ended") }
-        updateMinAgo()
-        nightscoutLoader()
-    }
+    
 
     //update Min Ago Text. We need to call this separately because it updates between readings
     func updateMinAgo(){
@@ -438,6 +378,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     }
     
     func updateBadge(val: Int) {
+        DispatchQueue.main.async {
         if UserDefaultsRepository.appBadge.value {
             let latestBG = String(val)
             UIApplication.shared.applicationIconBadgeNumber = Int(bgUnits.removePeriodForBadge(bgUnits.toDisplayUnits(latestBG))) ?? val
@@ -445,6 +386,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
             UIApplication.shared.applicationIconBadgeNumber = 0
         }
 //        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "updated badge") }
+        }
     }
     
     
@@ -483,6 +425,8 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
             if !granted { return }
             
             if UserDefaultsRepository.calendarIdentifier.value == "" { return }
+            
+            if self.bgData.count < 1 { return }
                 
             // This lets us fire the method to write Min Ago entries only once a minute starting after 6 minutes but allows new readings through
             if self.lastCalDate == self.bgData[self.bgData.count - 1].date

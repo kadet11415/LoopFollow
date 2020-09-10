@@ -168,6 +168,21 @@ extension MainViewController {
         lineOverride.highlightEnabled = true
         lineOverride.drawValuesEnabled = false
         
+        // BG Check
+        var chartEntryBGCheck = [ChartDataEntry]()
+        let lineBGCheck = LineChartDataSet(entries:chartEntryBGCheck, label: "")
+        lineBGCheck.circleRadius = 5
+        lineBGCheck.circleColors = [NSUIColor.systemRed.withAlphaComponent(0.75)]
+        lineBGCheck.drawCircleHoleEnabled = false
+        lineBGCheck.setDrawHighlightIndicators(false)
+        lineBGCheck.setColor(NSUIColor.systemRed, alpha: 1.0)
+        lineBGCheck.drawCirclesEnabled = true
+        lineBGCheck.lineWidth = 0
+        lineBGCheck.highlightEnabled = false
+        lineBGCheck.axisDependency = YAxis.AxisDependency.right
+        lineBGCheck.valueFormatter = ChartYDataValueFormatter()
+        lineBGCheck.drawValuesEnabled = false
+        
         // Setup the chart data of all lines
         let data = LineChartData()
         data.addDataSet(lineBG) // Dataset 0
@@ -177,6 +192,7 @@ extension MainViewController {
         data.addDataSet(lineCarbs) // Dataset 4
         data.addDataSet(lineBasalScheduled) // Dataset 5
         data.addDataSet(lineOverride) // Dataset 6
+        data.addDataSet(lineBGCheck) // Dataset 7
         
         data.setValueFont(UIFont.systemFont(ofSize: 12))
         
@@ -198,6 +214,10 @@ extension MainViewController {
         ul.limit = Double(UserDefaultsRepository.highLine.value)
         ul.lineColor = NSUIColor.systemYellow.withAlphaComponent(0.5)
         BGChart.rightAxis.addLimitLine(ul)
+        
+        // Add Now Line
+        createNowLine()
+        startGraphNowTimer()
         
         // Setup the main graph overall details
         BGChart.xAxis.valueFormatter = ChartXValueFormatter()
@@ -228,6 +248,15 @@ extension MainViewController {
         BGChart.data = data
         BGChart.setExtraOffsets(left: 10, top: 10, right: 10, bottom: 10)
         
+    }
+    
+    func createNowLine() {
+        BGChart.xAxis.removeAllLimitLines()
+        let ul = ChartLimitLine()
+        ul.limit = Double(dateTimeUtils.getNowTimeIntervalUTC())
+        ul.lineColor = NSUIColor.systemGray.withAlphaComponent(0.5)
+        ul.lineWidth = 1
+        BGChart.xAxis.addLimitLine(ul)
     }
     
     func updateBGGraphSettings() {
@@ -290,7 +319,7 @@ extension MainViewController {
             if Float(entries[i].sgv) > maxBG - maxBGOffset {
                 maxBG = Float(entries[i].sgv) + maxBGOffset
             }
-            let value = ChartDataEntry(x: Double(entries[i].date), y: Double(entries[i].sgv))
+            let value = ChartDataEntry(x: Double(entries[i].date), y: Double(entries[i].sgv), data: bgUnits.toDisplayUnits(String(entries[i].sgv)))
             mainChart.addEntry(value)
             smallChart.addEntry(value)
             
@@ -472,6 +501,23 @@ extension MainViewController {
         BGChart.notifyDataSetChanged()
     }
     
+    func updateBGCheckGraph() {
+        var dataIndex = 7
+        BGChart.lineData?.dataSets[dataIndex].clear()
+        for i in 0..<bgCheckData.count{
+            let formatter = NumberFormatter()
+            formatter.minimumFractionDigits = 0
+            formatter.maximumFractionDigits = 2
+            formatter.minimumIntegerDigits = 1
+            let value = ChartDataEntry(x: Double(bgCheckData[i].date), y: Double(bgCheckData[i].sgv), data: formatter.string(from: NSNumber(value: bgCheckData[i].sgv)))
+            BGChart.data?.dataSets[dataIndex].addEntry(value)
+
+        }
+        
+        BGChart.data?.dataSets[dataIndex].notifyDataSetChanged()
+        BGChart.data?.notifyDataChanged()
+        BGChart.notifyDataSetChanged()
+    }
  
     
     func createSmallBGGraph(){
@@ -527,7 +573,10 @@ extension MainViewController {
         
         var colors = [NSUIColor]()
         for i in 0..<overrideData.count{
-            let value = ChartDataEntry(x: Double(overrideData[i].date), y: Double(overrideData[i].sgv), data: overrideData[i].value)
+            let multiplier = overrideData[i].value as! Double * 100.0
+            let labelText = String(format: "%.0f%%", multiplier)
+            //let value = ChartDataEntry(x: Double(overrideData[i].date), y: Double(overrideData[i].sgv), data: overrideData[i].value)
+            let value = ChartDataEntry(x: Double(overrideData[i].date), y: Double(overrideData[i].sgv), data: labelText)
             BGChart.data?.dataSets[dataIndex].addEntry(value)
             
             if Double(overrideData[i].value) == 1.0 {
