@@ -13,11 +13,11 @@ import UIKit
 extension MainViewController {
     
     func restartAllTimers() {
-        if !deviceStatusTimer.isValid { startDeviceStatusTimer(time: 1) }
-        if !profileTimer.isValid { startProfileTimer(time: 1) }
-        if !bgTimer.isValid { startBGTimer(time: 1) }
-        if !treatmentsTimer.isValid { startTreatmentsTimer(time: 1) }
-        if !cageSageTimer.isValid { startCageSageTimer(time: 1) }
+        if !bgTimer.isValid { startBGTimer(time: 2) }
+        if !profileTimer.isValid { startProfileTimer(time: 3) }
+        if !deviceStatusTimer.isValid { startDeviceStatusTimer(time: 4) }
+        if !treatmentsTimer.isValid { startTreatmentsTimer(time: 5) }
+        if !cageSageTimer.isValid { startCageSageTimer(time: 6) }
         if !minAgoTimer.isValid { startMinAgoTimer(time: minAgoTimeInterval) }
         if !calendarTimer.isValid { startCalendarTimer(time: 15) }
         if !alarmTimer.isValid { startAlarmTimer(time: 30) }
@@ -87,7 +87,7 @@ extension MainViewController {
     }
     
     @objc func graphNowTimerDidEnd(_ timer:Timer) {
-        createNowLine()
+        createNowAndDIALines()
     }
     
     // Runs a 60 second timer when an alarm is snoozed
@@ -194,12 +194,10 @@ extension MainViewController {
             return
         }
         
-        if !isStaleData() && UserDefaultsRepository.url.value != "" {
-            if UserDefaultsRepository.downloadTreatments.value {
+        if UserDefaultsRepository.url.value != "" && UserDefaultsRepository.downloadTreatments.value {
                 WebLoadNSTreatments()
             }
             startTreatmentsTimer()
-        }
     }
     
     // Profile Timer
@@ -284,6 +282,9 @@ extension MainViewController {
     @objc func alarmTimerDidEnd(_ timer:Timer) {
         if bgData.count > 0 {
             self.checkAlarms(bgs: bgData)
+        }
+        if overrideGraphData.count > 0 {
+            self.checkOverrideAlarms()
         }
     }
     

@@ -103,11 +103,16 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     var basalProfile: [basalProfileStruct] = []
     var basalData: [basalGraphStruct] = []
     var basalScheduleData: [basalGraphStruct] = []
-    var bolusData: [bolusCarbGraphStruct] = []
-    var carbData: [bolusCarbGraphStruct] = []
+    var bolusData: [bolusGraphStruct] = []
+    var carbData: [carbGraphStruct] = []
     var overrideData: [DataStructs.overrideGraphStruct] = []
+    var overrideGraphData: [DataStructs.overrideStruct] = []
     var predictionData: [ShareGlucoseData] = []
     var bgCheckData: [ShareGlucoseData] = []
+    var suspendGraphData: [DataStructs.timestampOnlyStruct] = []
+    var resumeGraphData: [DataStructs.timestampOnlyStruct] = []
+    var sensorStartGraphData: [DataStructs.timestampOnlyStruct] = []
+    var noteGraphData: [DataStructs.noteStruct] = []
     var chartData = LineChartData()
     var newBGPulled = false
     var lastCalDate: Double = 0
@@ -121,6 +126,8 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     var latestIOB = ""
     var lastOverrideStartTime: TimeInterval = 0
     var lastOverrideEndTime: TimeInterval = 0
+    var topBG: Float = UserDefaultsRepository.minBGScale.value
+    var lastOverrideAlarm: TimeInterval = 0
     
     // share
     var bgDataShare: [ShareGlucoseData] = []

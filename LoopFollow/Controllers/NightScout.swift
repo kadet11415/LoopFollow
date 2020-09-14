@@ -32,10 +32,18 @@ extension MainViewController {
     }
     
     //NS Bolus Data  Struct
-    struct bolusCarbGraphStruct: Codable {
+    struct bolusGraphStruct: Codable {
         var value: Double
         var date: TimeInterval
         var sgv: Int
+    }
+    
+    //NS Bolus Data  Struct
+    struct carbGraphStruct: Codable {
+        var value: Double
+        var date: TimeInterval
+        var sgv: Int
+        var absorptionTime: Int
     }
     
     func isStaleData() -> Bool {
@@ -480,9 +488,9 @@ extension MainViewController {
                         PredictionLabel.textColor = UIColor.systemPurple
                         if UserDefaultsRepository.downloadPrediction.value && latestLoopTime < lastLoopTime {
                             predictionData.removeAll()
-                            var predictionTime = lastLoopTime + 300
+                            var predictionTime = lastLoopTime
                             let toLoad = Int(UserDefaultsRepository.predictionToLoad.value * 12)
-                            var i = 1
+                            var i = 0
                             while i <= toLoad {
                                 if i < prediction.count {
                                     let prediction = ShareGlucoseData(sgv: prediction[i], date: predictionTime, direction: "flat")
@@ -552,7 +560,7 @@ extension MainViewController {
                 }
                 else
                 {
-                    oText += String(format:"%.0f%%", 100)
+                    oText += "100%"
                 }
                 oText += " ("
                 let minValue = lastCorrection["minValue"] as! Double
@@ -581,13 +589,13 @@ extension MainViewController {
                         if let isActive = override["active"] as? Bool {
                             if isActive {
                                 if let multiplier = override["multiplier"] as? Double {
-                                    let override = DataStructs.overrideGraphStruct(value: multiplier, date: timestamp, sgv: Int(UserDefaultsRepository.overrideDisplayLocation.value))
+                                    let override = DataStructs.overrideGraphStruct(value: multiplier, date: timestamp, sgv: 400)
                                     overrideData.append(override)
                                 }
                                 
                             } else {
                                 let multiplier = 1.0 as Double
-                                let override = DataStructs.overrideGraphStruct(value: multiplier, date: timestamp, sgv: Int(UserDefaultsRepository.overrideDisplayLocation.value))
+                                let override = DataStructs.overrideGraphStruct(value: multiplier, date: timestamp, sgv: 400)
                                 overrideData.append(override)
                             }
                         }
@@ -597,8 +605,6 @@ extension MainViewController {
             }
         }
         overrideData.reverse()
-        updateOverrideGraph()
-        checkOverrideAlarms()
         
         // Start the timer based on the timestamp
         let now = dateTimeUtils.getNowTimeIntervalUTC()
@@ -883,9 +889,9 @@ extension MainViewController {
                 basalScheduleData.append(startDot)
                 var endDate = basal2Day[i].endDate
                 
-                // if it's the last one in the profile or date is greater than now, set it to the last BG dot
+                // if it's the last one in the profile or date is greater than now, set it to 30 minutes from now
                 if i == basal2Day.count - 1  || endDate > dateTimeUtils.getNowTimeIntervalUTC() {
-                    endDate = Double(dateTimeUtils.getNowTimeIntervalUTC())
+                    endDate = Double(dateTimeUtils.getNowTimeIntervalUTC() + (30 * 60))
                 }
 
                 let endDot = basalGraphStruct(basalRate: basal2Day[i].basalRate, date: endDate)
@@ -972,6 +978,7 @@ extension MainViewController {
         var suspendPump: [[String:AnyObject]] = []
         var resumePump: [[String:AnyObject]] = []
         var pumpSiteChange: [[String:AnyObject]] = []
+        var cgmSensorStart: [[String:AnyObject]] = []
         
         for i in 0..<entries.count {
             let entry = entries[i] as [String : AnyObject]?
@@ -995,6 +1002,8 @@ extension MainViewController {
                     resumePump.append(entry!)
                 case "Pump Site Change":
                     pumpSiteChange.append(entry!)
+                case "Sensor Start":
+                    cgmSensorStart.append(entry!)
                 default:
                     print("No Match: \(String(describing: entry))")
             }
@@ -1005,6 +1014,11 @@ extension MainViewController {
         if bolus.count > 0 { processNSBolus(entries: bolus)}
         if carbs.count > 0 { processNSCarbs(entries: carbs)}
         if bgCheck.count > 0 { processNSBGCheck(entries: bgCheck)}
+        if temporaryOverride.count > 0 { processNSOverrides(entries: temporaryOverride)}
+        if suspendPump.count > 0 { processSuspendPump(entries: suspendPump)}
+        if resumePump.count > 0 { processResumePump(entries: resumePump)}
+        if cgmSensorStart.count > 0 { processSensorStart(entries: cgmSensorStart)}
+        if note.count > 0 { processNotes(entries: note)}
     }
     
     // NS Temp Basal Response Processor
@@ -1181,7 +1195,7 @@ extension MainViewController {
         }
         infoTable.reloadData()
     }
-    
+
     // NS Meal Bolus Response Processor
     func processNSBolus(entries: [[String:AnyObject]]) {
         if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Bolus") }
@@ -1215,7 +1229,7 @@ extension MainViewController {
                 
                 if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
                     // Make the dot
-                    let dot = bolusCarbGraphStruct(value: bolus, date: Double(dateTimeStamp), sgv: Int(sgv.sgv))
+                    let dot = bolusGraphStruct(value: bolus, date: Double(dateTimeStamp), sgv: Int(sgv.sgv + 20))
                     bolusData.append(dot)
                 }
             } catch {
@@ -1238,6 +1252,7 @@ extension MainViewController {
         // because it's a small array, we're going to destroy and reload every time.
         carbData.removeAll()
         var lastFoundIndex = 0
+        var lastFoundBolus = 0
         for i in 0..<entries.count {
             let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
             var carbDate: String
@@ -1248,6 +1263,10 @@ extension MainViewController {
             } else {
                 return
             }
+            
+            
+            let absorptionTime = currentEntry?["absorptionTime"] as? Int ?? 0
+            
             // Fix for FreeAPS milliseconds in timestamp
             var strippedZone = String(carbDate.dropLast())
             strippedZone = strippedZone.components(separatedBy: ".")[0]
@@ -1257,7 +1276,7 @@ extension MainViewController {
             dateFormatter.locale = Locale(identifier: "en_US")
             dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
             let dateString = dateFormatter.date(from: strippedZone)
-            let dateTimeStamp = dateString!.timeIntervalSince1970
+            var dateTimeStamp = dateString!.timeIntervalSince1970
             
             guard let carbs = currentEntry?["carbs"] as? Double else {
                 if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "ERROR: Null Carb entry")}
@@ -1266,9 +1285,21 @@ extension MainViewController {
             let sgv = findNearestBGbyTime(needle: dateTimeStamp, haystack: bgData, startingIndex: lastFoundIndex)
             lastFoundIndex = sgv.foundIndex
             
+            var offset = -50
+            if sgv.sgv < Double(250) {
+                let bolusTime = findNearestBolusbyTime(timeWithin: 300, needle: dateTimeStamp, haystack: bolusData, startingIndex: lastFoundBolus)
+                lastFoundBolus = bolusTime.foundIndex
+                
+                if bolusTime.offset {
+                    offset = 70
+                } else {
+                    offset = 20
+                }
+            }
+            
             if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
                 // Make the dot
-                let dot = bolusCarbGraphStruct(value: Double(carbs), date: Double(dateTimeStamp), sgv: Int(sgv.sgv))
+                let dot = carbGraphStruct(value: Double(carbs), date: Double(dateTimeStamp), sgv: Int(sgv.sgv + Double(offset)), absorptionTime: absorptionTime)
                 carbData.append(dot)
             }
             
@@ -1279,6 +1310,176 @@ extension MainViewController {
         if UserDefaultsRepository.graphCarbs.value {
             updateCarbGraph()
         }
+        
+        
+    }
+    
+    // NS Suspend Pump Response Processor
+    func processSuspendPump(entries: [[String:AnyObject]]) {
+        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Suspend Pump") }
+        // because it's a small array, we're going to destroy and reload every time.
+        suspendGraphData.removeAll()
+        var lastFoundIndex = 0
+        for i in 0..<entries.count {
+            let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
+            var date: String
+            if currentEntry?["timestamp"] != nil {
+                date = currentEntry?["timestamp"] as! String
+            } else if currentEntry?["created_at"] != nil {
+                date = currentEntry?["created_at"] as! String
+            } else {
+                return
+            }
+            // Fix for FreeAPS milliseconds in timestamp
+            var strippedZone = String(date.dropLast())
+            strippedZone = strippedZone.components(separatedBy: ".")[0]
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dateFormatter.locale = Locale(identifier: "en_US")
+            dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+            let dateString = dateFormatter.date(from: strippedZone)
+            let dateTimeStamp = dateString!.timeIntervalSince1970
+
+            let sgv = findNearestBGbyTime(needle: dateTimeStamp, haystack: bgData, startingIndex: lastFoundIndex)
+            lastFoundIndex = sgv.foundIndex
+            
+            if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
+                // Make the dot
+                let dot = DataStructs.timestampOnlyStruct(date: Double(dateTimeStamp), sgv: Int(sgv.sgv))
+                suspendGraphData.append(dot)
+            }
+        }
+        
+        updateSuspendGraph()
+        
+        
+    }
+    
+    // NS Resume Pump Response Processor
+    func processResumePump(entries: [[String:AnyObject]]) {
+        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Resume Pump") }
+        // because it's a small array, we're going to destroy and reload every time.
+        resumeGraphData.removeAll()
+        var lastFoundIndex = 0
+        for i in 0..<entries.count {
+            let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
+            var date: String
+            if currentEntry?["timestamp"] != nil {
+                date = currentEntry?["timestamp"] as! String
+            } else if currentEntry?["created_at"] != nil {
+                date = currentEntry?["created_at"] as! String
+            } else {
+                return
+            }
+            // Fix for FreeAPS milliseconds in timestamp
+            var strippedZone = String(date.dropLast())
+            strippedZone = strippedZone.components(separatedBy: ".")[0]
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dateFormatter.locale = Locale(identifier: "en_US")
+            dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+            let dateString = dateFormatter.date(from: strippedZone)
+            let dateTimeStamp = dateString!.timeIntervalSince1970
+
+            let sgv = findNearestBGbyTime(needle: dateTimeStamp, haystack: bgData, startingIndex: lastFoundIndex)
+            lastFoundIndex = sgv.foundIndex
+            
+            if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
+                // Make the dot
+                let dot = DataStructs.timestampOnlyStruct(date: Double(dateTimeStamp), sgv: Int(sgv.sgv))
+                resumeGraphData.append(dot)
+            }
+        }
+        
+        updateResumeGraph()
+        
+        
+    }
+    
+    // NS Sensor Start Response Processor
+    func processSensorStart(entries: [[String:AnyObject]]) {
+        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Sensor Start") }
+        // because it's a small array, we're going to destroy and reload every time.
+        sensorStartGraphData.removeAll()
+        var lastFoundIndex = 0
+        for i in 0..<entries.count {
+            let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
+            var date: String
+            if currentEntry?["timestamp"] != nil {
+                date = currentEntry?["timestamp"] as! String
+            } else if currentEntry?["created_at"] != nil {
+                date = currentEntry?["created_at"] as! String
+            } else {
+                return
+            }
+            // Fix for FreeAPS milliseconds in timestamp
+            var strippedZone = String(date.dropLast())
+            strippedZone = strippedZone.components(separatedBy: ".")[0]
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dateFormatter.locale = Locale(identifier: "en_US")
+            dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+            let dateString = dateFormatter.date(from: strippedZone)
+            let dateTimeStamp = dateString!.timeIntervalSince1970
+
+            let sgv = findNearestBGbyTime(needle: dateTimeStamp, haystack: bgData, startingIndex: lastFoundIndex)
+            lastFoundIndex = sgv.foundIndex
+            
+            if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
+                // Make the dot
+                let dot = DataStructs.timestampOnlyStruct(date: Double(dateTimeStamp), sgv: Int(sgv.sgv))
+                sensorStartGraphData.append(dot)
+            }
+        }
+        
+        updateSensorStart()
+        
+        
+    }
+    
+    // NS Note Response Processor
+    func processNotes(entries: [[String:AnyObject]]) {
+        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Notes") }
+        // because it's a small array, we're going to destroy and reload every time.
+        noteGraphData.removeAll()
+        var lastFoundIndex = 0
+        for i in 0..<entries.count {
+            let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
+            var date: String
+            if currentEntry?["timestamp"] != nil {
+                date = currentEntry?["timestamp"] as! String
+            } else if currentEntry?["created_at"] != nil {
+                date = currentEntry?["created_at"] as! String
+            } else {
+                return
+            }
+            // Fix for FreeAPS milliseconds in timestamp
+            var strippedZone = String(date.dropLast())
+            strippedZone = strippedZone.components(separatedBy: ".")[0]
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dateFormatter.locale = Locale(identifier: "en_US")
+            dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+            let dateString = dateFormatter.date(from: strippedZone)
+            let dateTimeStamp = dateString!.timeIntervalSince1970
+
+            let sgv = findNearestBGbyTime(needle: dateTimeStamp, haystack: bgData, startingIndex: lastFoundIndex)
+            lastFoundIndex = sgv.foundIndex
+            
+            guard let thisNote = currentEntry?["notes"] as? String else { continue }
+            
+            if dateTimeStamp < (dateTimeUtils.getNowTimeIntervalUTC() + (60 * 60)) {
+                // Make the dot
+                let dot = DataStructs.noteStruct(date: Double(dateTimeStamp), sgv: Int(sgv.sgv), note: thisNote)
+                noteGraphData.append(dot)
+            }
+        }
+        
+        updateNotes()
         
         
     }
@@ -1329,6 +1530,73 @@ extension MainViewController {
             updateBGCheckGraph()
         }
         
+        
+    }
+    
+    // NS Override Response Processor
+    func processNSOverrides(entries: [[String:AnyObject]]) {
+        if UserDefaultsRepository.debugLog.value { self.writeDebugLog(value: "Process: Overrides") }
+        // because it's a small array, we're going to destroy and reload every time.
+        overrideGraphData.removeAll()
+        for i in 0..<entries.count {
+            let currentEntry = entries[entries.count - 1 - i] as [String : AnyObject]?
+            var date: String
+            if currentEntry?["timestamp"] != nil {
+                date = currentEntry?["timestamp"] as! String
+            } else if currentEntry?["created_at"] != nil {
+                date = currentEntry?["created_at"] as! String
+            } else {
+                return
+            }
+            // Fix for FreeAPS milliseconds in timestamp
+            var strippedZone = String(date.dropLast())
+            strippedZone = strippedZone.components(separatedBy: ".")[0]
+            
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+            dateFormatter.locale = Locale(identifier: "en_US")
+            dateFormatter.timeZone = TimeZone(abbreviation: "UTC")
+            let dateString = dateFormatter.date(from: strippedZone)
+            var dateTimeStamp = dateString!.timeIntervalSince1970
+            if dateTimeStamp < dateTimeUtils.getTimeInterval24HoursAgo() {
+                dateTimeStamp = dateTimeUtils.getTimeInterval24HoursAgo()
+            }
+            
+            var multiplier: Double = 1.0
+            if currentEntry?["insulinNeedsScaleFactor"] != nil {
+                multiplier = currentEntry?["insulinNeedsScaleFactor"] as! Double
+            }
+            var duration: Double = 5.0
+            if let durationType = currentEntry?["durationType"] as? String {
+                duration = dateTimeUtils.getNowTimeIntervalUTC() - dateTimeStamp + (60 * 60)
+            } else {
+                duration = (currentEntry?["duration"] as? Double)!
+                duration = duration * 60
+            }
+            
+            guard let enteredBy = currentEntry?["enteredBy"] as? String else { continue }
+            guard let reason = currentEntry?["reason"] as? String else { continue }
+            
+            var range: [Int] = []
+            if let ranges = currentEntry?["correctionRange"] as? [Int] {
+                if ranges.count == 2 {
+                    guard let low = ranges[0] as? Int else { continue }
+                    guard let high = ranges[1] as? Int else { continue }
+                    range.append(low)
+                    range.append(high)
+                }
+                
+            }
+                        
+            let endDate = dateTimeStamp + (duration)
+
+            let dot = DataStructs.overrideStruct(insulNeedsScaleFactor: multiplier, date: dateTimeStamp, endDate: endDate, duration: duration, correctionRange: range, enteredBy: enteredBy, reason: reason, sgv: -20)
+            overrideGraphData.append(dot)
+            
+            
+        }
+        
+        updateOverrideGraph()
         
     }
 }
