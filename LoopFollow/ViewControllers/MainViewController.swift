@@ -35,6 +35,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     @IBOutlet weak var statsStdDev: UILabel!
     @IBOutlet weak var serverText: UILabel!
     @IBOutlet weak var statsView: UIView!
+    @IBOutlet weak var smallGraphHeightConstraint: NSLayoutConstraint!
     
       
     // Data Table class
@@ -123,6 +124,7 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     var latestLoopTime: Double = 0
     var latestCOB = ""
     var latestBasal = ""
+    var latestPumpVolume: Double = 50.0
     var latestIOB = ""
     var lastOverrideStartTime: TimeInterval = 0
     var lastOverrideEndTime: TimeInterval = 0
@@ -171,6 +173,9 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
             self.tableData.append(infoData(name:UserDefaultsRepository.infoNames.value[i], value:""))
         }
         createDerivedData()
+        
+        smallGraphHeightConstraint.constant = CGFloat(UserDefaultsRepository.smallGraphHeight.value)
+        self.view.layoutIfNeeded()
       
         // TODO: need non-us server ?
         let shareUserName = UserDefaultsRepository.shareUserName.value
@@ -236,6 +241,11 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
               
               // can look at settings flags to be more fine tuned
               self.updateBGGraphSettings()
+            
+            if ChartSettingsChangeEnum.smallGraphHeight.rawValue != 0 {
+                smallGraphHeightConstraint.constant = CGFloat(UserDefaultsRepository.smallGraphHeight.value)
+                self.view.layoutIfNeeded()
+            }
               
               // reset the app state
               appState.chartSettingsChanged = false
@@ -510,8 +520,15 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
                     }
                     return
                 }
+                DispatchQueue.main.async {
+                    self.saveChartImage()
+                    
+                    self.sendNotification(self, title: "Watch Face Cleanup", subtitle: "", body: "Delete old watch face graph images", timer: 86400, method: "deleteOldImages", actionTitle: "Delete")
+                }
+                
             })
         }
+        
         
     }
     
@@ -696,23 +713,31 @@ class MainViewController: UIViewController, UITableViewDataSource, ChartViewDele
     
     
     // General Notifications
-    func sendNotification(title: String, body: String)
-    {
-       // UNUserNotificationCenter.current().delegate = self
+    
+    func sendNotification(_ sender: Any, title: String, subtitle: String, body: String, timer: TimeInterval, method: String, actionTitle: String) {
         
-//        let content = UNMutableNotificationContent()
-//        content.title = title
-//        content.body = body
-//        content.sound = .default
-//        
-//        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
-//        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
-//        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
-//        
+        UNUserNotificationCenter.current().delegate = self
+        
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.subtitle = subtitle
+        content.body = body
+        content.categoryIdentifier = "category"
+        content.sound = .default
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: timer, repeats: false)
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: trigger)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        
+        let action = UNNotificationAction(identifier: method, title: actionTitle, options: [])
+        let category = UNNotificationCategory(identifier: "category", actions: [action], intentIdentifiers: [], options: [])
+        UNUserNotificationCenter.current().setNotificationCategories([category])
     }
     
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        
+        if response.actionIdentifier == "deleteOldImages" {
+            deleteOldImages()
+        }
     }
     
     
